@@ -13,13 +13,18 @@
   var PEER = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
 
   // ---- GM 열쇠: 주소 뒤 #gm=열쇠 로 한 번 열면 이 브라우저를 GM으로 기억 ----
-  try {
-    var m = location.hash.match(/gm=([^&]+)/);
-    if (m) {
+  function takeGmKey() {
+    try {
+      var m = location.hash.match(/gm=([^&]+)/);
+      if (!m) return false;
       localStorage.setItem("cfp-gm", decodeURIComponent(m[1]));
       history.replaceState(null, "", location.pathname + location.search);
-    }
-  } catch (e) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  takeGmKey();
+  // 이미 열린 페이지에서 주소 뒤에 #gm=... 만 붙이면 새로 안 불러와지니까, 그때도 읽고 새로고침
+  addEventListener("hashchange", function () { if (takeGmKey()) location.reload(); });
   function isGm() {
     try { return !!window.CFP_GM_KEY && window.CFP_GM_KEY !== "바꿔줘" && localStorage.getItem("cfp-gm") === window.CFP_GM_KEY; }
     catch (e) { return false; }
@@ -8464,8 +8469,21 @@ function gmBtn(text, fn, ghost = true) {
 function confirmBtn(text, fn) {
   return gmBtn(text, async b => { if (b.dataset.sure) { await fn(); return; } b.dataset.sure = "1"; b.textContent = "정말?"; setTimeout(() => { b.textContent = text; delete b.dataset.sure; }, 3000); });
 }
+
+let gmClaiming = false;
+async function gmAutoClaim() {
+  if (gmClaiming || !db || !amOwner || !acct || acct.id !== myId) return;
+  const rid = rowId(acct.id, acct.key); if (isGmRow(rid)) return;
+  gmClaiming = true;
+  try {
+    const ref = db.collection("gm").doc("config"), cur = await ref.get(), d = cur.exists ? cur.data() || {} : {};
+    const gms = Array.isArray(d.gms) ? d.gms.filter(v => typeof v === "string") : [];
+    if (!gms.includes(rid)) await ref.set({ gms: [rid, ...gms].slice(0, 10), cms: Array.isArray(d.cms) ? d.cms.filter(v => typeof v === "string").slice(0, 20) : [] });
+  } catch {}
+  gmClaiming = false;
+}
 async function renderGm() {
-  const box = $("gmBox"); if (!box) return;
+  const box = $("gmBox"); if (!box) return; gmAutoClaim();
   if (!db || !iAmGm()) { box.hidden = true; return; }
   box.hidden = false;
   const body = $("gmBody"); body.textContent = "";
